@@ -16,6 +16,9 @@
   (size [_]
     (+ (size f) (size g)))
 
+  (prec [_]
+    1)
+
   Stringable
   (string-list [a]
     (comp (string-list f)
@@ -26,10 +29,35 @@
   (size [x]
     (+ (size f) (size g)))
 
+  (prec [_]
+    2)
+
   Stringable
   (string-list [_]
     (comp (bracket 2 f)
           (cons "*" (bracket 2 g)))))
+
+(deftype Pow [f g]
+  Stringable
+  (string-list [_]
+    (comp (bracket 2 f)
+          (cons "^" (bracket 3 g))))
+
+  Precedence
+  (size [x]
+    (+ (size f) (size g)))
+
+  (prec [_] 3))
+
+(deftype Ln [expr]
+  Stringable
+  (string-list [_]
+    (comp (cons "ln(" (string-list expr))
+          (list ")")))
+
+  Precedence
+  (size [_]
+    (size expr)))
 
 (defprotocol Operations
   (d [f x])
@@ -55,8 +83,14 @@
                             (mul f-g (mul f (.g g)))))))
             (Mul f g)))
 
-  (pow [f g])
-  (ln [f]))
+  (pow [f g]
+    (either (or (and (= 0 g) (maybe 1))
+                (and (= 1 g) (maybe f)))
+            (Pow f g)))
+
+  (ln [f]
+    (either (and (= 1 f) (maybe 0))
+            (Ln f))))
 
 (defn pown [a n]
   (assert (instance? Integer a))
@@ -74,15 +108,12 @@
 (extend-type Add
   Operations
   (add [a h]
-    (add (.f a) (add (.g a) h)))
+    (.g a (add (.g a) h)))
 
   (d [a x]
-    (add (d (.f a) x)
-         (d (.g a) x)))
-
-  Precedence
-  (prec [_]
-    1))
+    (-> a
+        (.f (d (.f a) x))
+        (.g (d (.g a) x)))))
 
 (extend-type Mul
   Operations
@@ -93,43 +124,23 @@
     (let [f (.f m)
           g (.g m)]
       (add (mul f (d g x))
-           (mul g (d f x)))))
+           (mul g (d f x))))))
 
-  Precedence
-  (prec [_]
-    2))
-
-(deftype Pow [f g]
-  Stringable
-  (string-list [_]
-    (comp (bracket 2 f)
-          (cons "^" (bracket 3 g))))
-
+(extend-type Pow
   Operations
-  (d [_ x]
-    (mul (pow f g)
-         (add (mul (mul g (d f x)) (pow f -1))
-              (mul (ln f) (d g x)))))
+  (d [p x]
+    (let [f (.f p)
+          g (.g p)]
+      (mul (pow f g)
+           (add (mul (mul g (d f x)) (.g p -1))
+                (mul (ln f) (d g x)))))))
 
-  Precedence
-  (size [x]
-    (+ (size f) (size g)))
 
-  (prec [_] 3))
-
-(deftype Ln [expr]
-  Stringable
-  (string-list [_]
-    (comp (cons "ln(" (string-list expr))
-          (list ")")))
-
+(extend-type Ln
   Operations
-  (d [_ x]
-    (mul (d expr x) (pow expr -1)))
-
-  Precedence
-  (size [_]
-    (size expr)))
+  (d [l x]
+    (let [expr (.expr l)]
+      (mul (d expr x) (pow expr -1)))))
 
 (extend-type String
   Operations
@@ -137,12 +148,6 @@
     (either (and (= f x)
                  (maybe 1))
             0))
-
-  (ln [s]
-    (Ln s))
-
-  (pow [f g]
-    (Pow f g))
 
   Precedence
   (size [_]
@@ -169,9 +174,10 @@
             (Mul f g)))
 
   (pow [f g]
-    (either (map (instance? Integer g)
-                 (fn [g]
-                   (pown f g)))
+    (either (or (= 0 f)
+                (map (instance? Integer g)
+                     (fn [g]
+                       (pown f g))))
             (Pow f g)))
 
   Precedence
