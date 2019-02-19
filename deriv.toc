@@ -1,0 +1,200 @@
+#! /home/jim/toccata/new-toc --script
+
+(defprotocol Precedence
+  (size [_])
+  (prec [_] 4))
+
+(defn bracket [outer expr]
+  (assert-result r (instance? List r))
+
+  (either (and (< (prec expr) outer)
+               (maybe (list "(" (str expr) ")")))
+          (string-list expr)))
+
+(deftype Add [f g]
+  Precedence
+  (size [_]
+    (+ (size f) (size g)))
+
+  Stringable
+  (string-list [a]
+    (comp (string-list f)
+          (cons " + " (string-list g)))))
+
+(deftype Mul [f g]
+  Precedence
+  (size [x]
+    (+ (size f) (size g)))
+
+  Stringable
+  (string-list [_]
+    (comp (bracket 2 f)
+          (cons "*" (bracket 2 g)))))
+
+(defprotocol Operations
+  (d [f x])
+
+  (add [f g]
+    (either (or (and (= 0 g) (maybe f))
+                (and (instance? Integer g)
+                     (maybe (Add g f)))
+                (and (instance? Add g)
+                     (map (instance? Integer (.f g))
+                          (fn [f-g]
+                            (add f-g (add f (.g g)))))))
+            (Add f g)))
+
+  (mul [f g]
+    (either (or (= 0 g)
+                (and (= 1 g) (maybe f))
+                (and (instance? Integer g)
+                     (maybe (mul g f)))
+                (and (instance? Mul g)
+                     (map (instance? Integer (.f g))
+                          (fn [f-g]
+                            (mul f-g (mul f (.g g)))))))
+            (Mul f g)))
+
+  (pow [f g])
+  (ln [f]))
+
+(defn pown [a n]
+  (assert (instance? Integer a))
+  (assert (instance? Integer n))
+
+  (either (or (and (= 0 n) (maybe 1))
+              (and (= 1 n) (maybe a)))
+          (let [b (pown a (div n 2))
+                x (either (and (= 0 (rem n 2))
+                               (maybe 1))
+                          a)]
+            (* b b x))))
+
+
+(extend-type Add
+  Operations
+  (add [a h]
+    (add (.f a) (add (.g a) h)))
+
+  (d [a x]
+    (add (d (.f a) x)
+         (d (.g a) x)))
+
+  Precedence
+  (prec [_]
+    1))
+
+(extend-type Mul
+  Operations
+  (mul [m h]
+    (mul (.f m) (mul (.g m) h)))
+
+  (d [m x]
+    (let [f (.f m)
+          g (.g m)]
+      (add (mul f (d g x))
+           (mul g (d f x)))))
+
+  Precedence
+  (prec [_]
+    2))
+
+(deftype Pow [f g]
+  Stringable
+  (string-list [_]
+    (comp (bracket 2 f)
+          (cons "^" (bracket 3 g))))
+
+  Operations
+  (d [_ x]
+    (mul (pow f g)
+         (add (mul (mul g (d f x)) (pow f -1))
+              (mul (ln f) (d g x)))))
+
+  Precedence
+  (size [x]
+    (+ (size f) (size g)))
+
+  (prec [_] 3))
+
+(deftype Ln [expr]
+  Stringable
+  (string-list [_]
+    (comp (cons "ln(" (string-list expr))
+          (list ")")))
+
+  Operations
+  (d [_ x]
+    (mul (d expr x) (pow expr -1)))
+
+  Precedence
+  (size [_]
+    (size expr)))
+
+(extend-type String
+  Operations
+  (d [f x]
+    (either (and (= f x)
+                 (maybe 1))
+            0))
+
+  (ln [s]
+    (Ln s))
+
+  (pow [f g]
+    (Pow f g))
+
+  Precedence
+  (size [_]
+    1))
+
+(extend-type Integer
+  Operations
+  (d [n x]
+    0)
+
+  (add [f g]
+    (either (or (and (= 0 f) (maybe g))
+                (map (instance? Integer g)
+                     (fn [g]
+                       (* f g))))
+            (Add f g)))
+
+  (mul [f g]
+    (either (or (and (= 1 f)
+                     (maybe g))
+                (map (instance? Integer g)
+                     (fn [g]
+                       (* f g))))
+            (Mul f g)))
+
+  (pow [f g]
+    (either (map (instance? Integer g)
+                 (fn [g]
+                   (pown f g)))
+            (Pow f g)))
+
+  Precedence
+  (size [_]
+    1))
+
+(defn show [expr]
+  (either (map (> (size expr) 100)
+               (fn [sz]
+                 (str "<<" sz ">>")))
+          (str expr)))
+
+(defn nest [n f x]
+  (either (and (= 0 n)
+               (maybe x))
+          (nest (dec n) f (f x))))
+
+(defn deriv [f]
+  (let [d-prime (d f "x")]
+    (println (str "D("
+                  (show f)
+                  ") = " (show d-prime)))
+    d-prime))
+
+(main [_]
+  (nest 10 deriv (Pow "x" "x")))
