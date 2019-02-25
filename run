@@ -1,0 +1,12 @@
+#! /bin/bash
+
+$CC -DREFS_SIZE=int16_t \
+    -DTYPE_SIZE=int32_t \
+    -DSINGLE_THREADED=1 \
+    -DFAST_DECS=1 \
+    -DFAST_INCS=1 \
+    -m32 \
+    -O3 \
+    -lpthread \
+    -g -o deriv -std=c99 core.c deriv.c &&
+/usr/bin/time -v ./deriv 10

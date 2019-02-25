@@ -59,32 +59,30 @@
   (size [_]
     (size expr)))
 
+(defprotocol Stars
+  (add* [g f]
+    (Add f g))
+  
+  (add** [_ f g]
+    (Add f g))
+
+  (mul* [g f]
+    (Mul f g))
+
+  (mul** [_ f g]
+    (Mul f g)))
+
 (defprotocol Operations
   (d [f x])
 
   (add [f g]
-    (either (or (and (= 0 g) (maybe f))
-                (and (instance? Integer g)
-                     (maybe (Add g f)))
-                (and (instance? Add g)
-                     (map (instance? Integer (.f g))
-                          (fn [f-g]
-                            (add f-g (add f (.g g)))))))
-            (Add f g)))
+    (add* g f))
 
   (mul [f g]
-    (either (or (= 0 g)
-                (and (= 1 g) (maybe f))
-                (and (instance? Integer g)
-                     (maybe (mul g f)))
-                (and (instance? Mul g)
-                     (map (instance? Integer (.f g))
-                          (fn [f-g]
-                            (mul f-g (mul f (.g g)))))))
-            (Mul f g)))
+    (mul* g f))
 
   (pow [f g]
-    (either (or (and (= 0 g) (maybe 1))
+    (either (or (map (= 0 g) (fn [_] 1))
                 (and (= 1 g) (maybe f)))
             (Pow f g)))
 
@@ -111,9 +109,13 @@
     (.g a (add (.g a) h)))
 
   (d [a x]
-    (-> a
-        (.f (d (.f a) x))
-        (.g (d (.g a) x)))))
+    (let [f (.f a)
+          g (.g a)]
+      (Add (d f x) (d g x))))
+
+  Stars
+  (add* [g f]
+    (add** (.f g) f g)))
 
 (extend-type Mul
   Operations
@@ -124,7 +126,11 @@
     (let [f (.f m)
           g (.g m)]
       (add (mul f (d g x))
-           (mul g (d f x))))))
+           (mul g (d f x)))))
+
+  Stars
+  (mul* [g f]
+    (mul** (.f g) f g)))
 
 (extend-type Pow
   Operations
@@ -160,34 +166,46 @@
 
   (add [f g]
     (either (or (and (= 0 f) (maybe g))
-                (map (instance? Integer g)
-                     (fn [g]
-                       (* f g))))
+                (and (instance? Integer g)
+                     (maybe (+ f g))))
             (Add f g)))
 
   (mul [f g]
     (either (or (and (= 1 f)
                      (maybe g))
-                (map (instance? Integer g)
-                     (fn [g]
-                       (* f g))))
+                (and (instance? Integer g)
+                     (maybe (* f g))))
             (Mul f g)))
 
   (pow [f g]
     (either (or (= 0 f)
-                (map (instance? Integer g)
-                     (fn [g]
-                       (pown f g))))
+                (and (instance? Integer g)
+                     (maybe (pown f g))))
             (Pow f g)))
 
   Precedence
   (size [_]
-    1))
+    1)
+
+  Stars
+  (add* [g f]
+    (either (and (= 0 g) (maybe f))
+            (Add g f)))
+
+  (add** [f-g f g]
+    (add f-g (add f (.g g))))
+
+  (mul* [g f]
+    (either (= 0 g)
+            (mul g f)))
+
+  (mul** [f-g f g]
+    (mul f-g (mul f (.g g)))))
 
 (defn show [expr]
-  (either (map (> (size expr) 100)
-               (fn [sz]
-                 (str "<<" sz ">>")))
+  (either (let [sz (size expr)]
+            (and (> sz 100)
+                 (maybe (str "<<" sz ">>"))))
           (str expr)))
 
 (defn nest [n f x]
@@ -202,5 +220,6 @@
                   ") = " (show d-prime)))
     d-prime))
 
-(main [_]
-  (nest 10 deriv (Pow "x" "x")))
+(main [[_ depth-str]]
+  (nest (str-to-int depth-str)
+        deriv (Pow "x" "x")))
