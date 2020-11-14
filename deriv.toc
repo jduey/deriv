@@ -7,9 +7,10 @@
 (defn bracket [outer expr]
   (assert-result r (instance? List r))
 
-  (either (and (< (prec expr) outer)
-               (maybe (list "(" (str expr) ")")))
-          (string-list expr)))
+  (cond  (< (prec expr) outer)
+         (list "(" (str expr) ")")
+
+         (string-list expr)))
 
 (deftype Add [f g]
   Precedence
@@ -82,24 +83,24 @@
     (mul* g f))
 
   (pow [f g]
-    (either (or (map (= 0 g) (fn [_] 1))
-                (and (= 1 g) (maybe f)))
-            (Pow f g)))
+    (cond (= 0 g) 1
+          (= 1 g) f
+          (Pow f g)))
 
   (ln [f]
-    (either (and (= 1 f) (maybe 0))
-            (Ln f))))
+    (cond (= 1 f) 0
+          (Ln f))))
 
 (defn pown [a n]
   (assert (instance? Integer a))
   (assert (instance? Integer n))
 
-  (either (or (and (= 0 n) (maybe 1))
-              (and (= 1 n) (maybe a)))
+  (cond (= 0 n) 1
+        (= 1 n) a
           (let [b (pown a (div n 2))
-                x (either (and (= 0 (rem n 2))
-                               (maybe 1))
-                          a)]
+                x (cond (= 0 (rem n 2))
+                        1
+                        a)]
             (* b b x))))
 
 
@@ -151,9 +152,9 @@
 (extend-type String
   Operations
   (d [f x]
-    (either (and (= f x)
-                 (maybe 1))
-            0))
+    (cond (= f x)
+          1
+          0))
 
   Precedence
   (size [_]
@@ -165,23 +166,19 @@
     0)
 
   (add [f g]
-    (either (or (and (= 0 f) (maybe g))
-                (and (instance? Integer g)
-                     (maybe (+ f g))))
-            (Add f g)))
+    (cond (= 0 f) g
+          (instance? Integer g) (+ f g)
+          (Add f g)))
 
   (mul [f g]
-    (either (or (and (= 1 f)
-                     (maybe g))
-                (and (instance? Integer g)
-                     (maybe (* f g))))
-            (Mul f g)))
+    (cond (= 1 f) g
+          (instance? Integer g) (* f g)
+          (Mul f g)))
 
   (pow [f g]
-    (either (or (= 0 f)
-                (and (instance? Integer g)
-                     (maybe (pown f g))))
-            (Pow f g)))
+    (cond (= 0 f) 0
+          (instance? Integer g) (pown f g)
+          (Pow f g)))
 
   Precedence
   (size [_]
@@ -189,8 +186,8 @@
 
   Stars
   (add* [g f]
-    (either (and (= 0 g) (maybe f))
-            (Add g f)))
+    (cond (= 0 g) f
+          (Add g f)))
 
   (add** [f-g f g]
     (add f-g (add f (.g g))))
@@ -209,9 +206,8 @@
           (str expr)))
 
 (defn nest [n f x]
-  (either (and (= 0 n)
-               (maybe x))
-          (nest (dec n) f (f x))))
+  (cond (= 0 n) x
+        (nest (dec n) f (f x))))
 
 (defn deriv [f]
   (let [d-prime (d f "x")]
